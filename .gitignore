@@ -1,0 +1,22 @@
+# Fichiers temporaires Claude
+tmpclaude-*
+
+# Terraform global
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.backup
+**/*.tfplan
+**/.terraform.lock.hcl
+
+# Claude settings (local)
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
