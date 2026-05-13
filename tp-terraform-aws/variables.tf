@@ -40,7 +40,7 @@ variable "public_subnet_cidr" {
 variable "instance_type" {
   description = "Type d'instance EC2"
   type        = string
-  default     = "t2.micro" # Free Tier - 750h/mois gratuites
+  default     = "t3.micro"
 }
 
 variable "my_ip" {
