@@ -1,4 +1,35 @@
 # ══════════════════════════════════════════════════════════════════════════════
+# Locals - Configuration multi-environnements (BONUS Workspaces)
+# ══════════════════════════════════════════════════════════════════════════════
+
+locals {
+  # Détermine l'environnement depuis le workspace ou la variable
+  environment = terraform.workspace != "default" ? terraform.workspace : var.environment
+
+  # Préfixe de nommage incluant l'environnement
+  name_prefix = "${var.project_name}-${local.environment}"
+
+  # Configuration par environnement
+  instance_types = {
+    dev     = "t3.micro"
+    staging = "t3.small"
+    prod    = "t3.medium"
+  }
+
+  # Sélection du type d'instance selon l'environnement
+  instance_type = lookup(local.instance_types, local.environment, var.instance_type)
+
+  # Tags communs à toutes les ressources
+  common_tags = {
+    Project     = var.project_name
+    Environment = local.environment
+    ManagedBy   = "Terraform"
+    Owner       = var.owner
+    Workspace   = terraform.workspace
+  }
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Data Sources
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -30,7 +61,7 @@ resource "aws_vpc" "main" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = { Name = "${var.project_name}-vpc" }
+  tags = { Name = "${local.name_prefix}-vpc" }
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -40,7 +71,7 @@ resource "aws_vpc" "main" {
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
-  tags = { Name = "${var.project_name}-igw" }
+  tags = { Name = "${local.name_prefix}-igw" }
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -53,7 +84,7 @@ resource "aws_subnet" "public" {
   availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
-  tags = { Name = "${var.project_name}-public-subnet" }
+  tags = { Name = "${local.name_prefix}-public-subnet" }
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -68,7 +99,7 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.main.id
   }
 
-  tags = { Name = "${var.project_name}-public-rt" }
+  tags = { Name = "${local.name_prefix}-public-rt" }
 }
 
 resource "aws_route_table_association" "public" {
@@ -81,7 +112,7 @@ resource "aws_route_table_association" "public" {
 # ══════════════════════════════════════════════════════════════════════════════
 
 resource "aws_security_group" "web" {
-  name        = "${var.project_name}-web-sg"
+  name        = "${local.name_prefix}-web-sg"
   description = "Security Group pour le serveur web"
   vpc_id      = aws_vpc.main.id
 
@@ -121,7 +152,7 @@ resource "aws_security_group" "web" {
     description = "Tout le trafic sortant"
   }
 
-  tags = { Name = "${var.project_name}-web-sg" }
+  tags = { Name = "${local.name_prefix}-web-sg" }
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -129,7 +160,7 @@ resource "aws_security_group" "web" {
 # ══════════════════════════════════════════════════════════════════════════════
 
 resource "aws_key_pair" "deployer" {
-  key_name   = "${var.project_name}-key"
+  key_name   = "${local.name_prefix}-key"
   public_key = file(var.ssh_public_key_path)
 }
 
@@ -139,10 +170,13 @@ resource "aws_key_pair" "deployer" {
 
 resource "aws_instance" "web" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
+  instance_type          = local.instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.deployer.key_name
+
+  # User Data - Script de bootstrap (BONUS)
+  user_data = var.enable_user_data ? file("${path.module}/scripts/user_data.sh") : null
 
   root_block_device {
     volume_size = 8 # Minimum pour Ubuntu, économise les coûts
@@ -150,7 +184,7 @@ resource "aws_instance" "web" {
     encrypted   = true
   }
 
-  tags = { Name = "${var.project_name}-web" }
+  tags = { Name = "${local.name_prefix}-web" }
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -162,9 +196,9 @@ resource "random_id" "suffix" {
 }
 
 resource "aws_s3_bucket" "assets" {
-  bucket = "${var.project_name}-assets-${random_id.suffix.hex}"
+  bucket = "${local.name_prefix}-assets-${random_id.suffix.hex}"
 
-  tags = { Name = "${var.project_name}-assets" }
+  tags = { Name = "${local.name_prefix}-assets" }
 }
 
 resource "aws_s3_bucket_versioning" "assets" {

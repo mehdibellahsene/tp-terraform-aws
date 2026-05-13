@@ -9,7 +9,10 @@ param(
     [switch]$AWS,
     [switch]$Docker,
     [switch]$GitHub,
-    [switch]$Check
+    [switch]$Check,
+    [switch]$Connect,    # Nouvelle option: connexion SSH à l'instance
+    [switch]$Web,        # Nouvelle option: ouvrir la page web
+    [switch]$Status      # Nouvelle option: afficher le statut
 )
 
 $ErrorActionPreference = "Continue"
@@ -357,10 +360,144 @@ function Run-AWSInfrastructure {
             Write-Host "Pour vous connecter a l'instance:" -ForegroundColor Green
             Write-Host "  ssh -i ~/.ssh/tp_terraform ubuntu@$instanceIP" -ForegroundColor Cyan
             Write-Host ""
+            Write-Host "Ou utilisez:" -ForegroundColor Green
+            Write-Host "  .\run-tp.ps1 -Connect" -ForegroundColor Cyan
+            Write-Host ""
         }
     }
     catch {
         Write-Err "Erreur dans l'infrastructure AWS: $_"
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+#===============================================================================
+# Connexion SSH a l'instance EC2
+#===============================================================================
+function Connect-ToInstance {
+    Write-Header "CONNEXION SSH A L'INSTANCE EC2"
+
+    # Charger le fichier .env
+    Load-EnvFile "$ScriptDir\tp-terraform-aws\.env" | Out-Null
+
+    Push-Location "$ScriptDir\tp-terraform-aws"
+
+    try {
+        # Verifier que l'infrastructure existe
+        if (-not (Test-Path ".terraform")) {
+            Write-Err "L'infrastructure n'est pas initialisee. Executez d'abord: .\run-tp.ps1 -AWS"
+            Pop-Location
+            return
+        }
+
+        # Recuperer l'IP de l'instance
+        $instanceIP = terraform output -raw instance_public_ip 2>$null
+
+        if ([string]::IsNullOrWhiteSpace($instanceIP)) {
+            Write-Err "Aucune instance EC2 trouvee. Deployez d'abord l'infrastructure avec: .\run-tp.ps1 -AWS"
+            Pop-Location
+            return
+        }
+
+        $sshKeyPath = "$env:USERPROFILE\.ssh\tp_terraform"
+
+        if (-not (Test-Path $sshKeyPath)) {
+            Write-Err "Cle SSH non trouvee: $sshKeyPath"
+            Write-Warn "Generez une cle avec: ssh-keygen -t ed25519 -f ~/.ssh/tp_terraform"
+            Pop-Location
+            return
+        }
+
+        Write-Success "Instance trouvee: $instanceIP"
+        Write-Host ""
+        Write-Host "Connexion en cours..." -ForegroundColor Cyan
+        Write-Host ""
+
+        # Lancer SSH
+        & ssh -i $sshKeyPath -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "ubuntu@$instanceIP"
+    }
+    catch {
+        Write-Err "Erreur de connexion: $_"
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+#===============================================================================
+# Ouvrir la page web
+#===============================================================================
+function Open-WebPage {
+    Write-Header "OUVERTURE DE LA PAGE WEB"
+
+    # Charger le fichier .env
+    Load-EnvFile "$ScriptDir\tp-terraform-aws\.env" | Out-Null
+
+    Push-Location "$ScriptDir\tp-terraform-aws"
+
+    try {
+        # Verifier que l'infrastructure existe
+        if (-not (Test-Path ".terraform")) {
+            Write-Err "L'infrastructure n'est pas initialisee. Executez d'abord: .\run-tp.ps1 -AWS"
+            Pop-Location
+            return
+        }
+
+        # Recuperer l'IP de l'instance
+        $instanceIP = terraform output -raw instance_public_ip 2>$null
+
+        if ([string]::IsNullOrWhiteSpace($instanceIP)) {
+            Write-Err "Aucune instance EC2 trouvee. Deployez d'abord l'infrastructure avec: .\run-tp.ps1 -AWS"
+            Pop-Location
+            return
+        }
+
+        $url = "http://$instanceIP"
+        Write-Success "Ouverture de: $url"
+        Start-Process $url
+    }
+    catch {
+        Write-Err "Erreur: $_"
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+#===============================================================================
+# Afficher le statut de l'infrastructure
+#===============================================================================
+function Show-Status {
+    Write-Header "STATUT DE L'INFRASTRUCTURE"
+
+    # Charger le fichier .env
+    Load-EnvFile "$ScriptDir\tp-terraform-aws\.env" | Out-Null
+
+    Push-Location "$ScriptDir\tp-terraform-aws"
+
+    try {
+        # Verifier que l'infrastructure existe
+        if (-not (Test-Path ".terraform")) {
+            Write-Warn "L'infrastructure n'est pas initialisee."
+            Pop-Location
+            return
+        }
+
+        Write-Step "Etat Terraform:"
+        terraform show -no-color | Select-Object -First 50
+
+        Write-Host ""
+        Write-Step "Outputs:"
+        terraform output
+
+        Write-Host ""
+        Write-Step "Ressources:"
+        terraform state list
+    }
+    catch {
+        Write-Err "Erreur: $_"
     }
     finally {
         Pop-Location
@@ -452,7 +589,14 @@ function Show-Menu {
     Write-Host "3) Exercice 2.2 - GitHub"
     Write-Host "4) Section 3 - Infrastructure AWS"
     Write-Host "5) Executer TOUT le TP"
-    Write-Host "6) Detruire toutes les ressources"
+    Write-Host ""
+    Write-Host "--- Actions rapides ---" -ForegroundColor Yellow
+    Write-Host "6) Se connecter a l'instance EC2 (SSH)"
+    Write-Host "7) Ouvrir la page web"
+    Write-Host "8) Afficher le statut"
+    Write-Host ""
+    Write-Host "--- Nettoyage ---" -ForegroundColor Red
+    Write-Host "9) Detruire toutes les ressources"
     Write-Host "0) Quitter"
     Write-Host ""
 
@@ -470,7 +614,10 @@ function Show-Menu {
             Run-AWSInfrastructure
             Show-Menu
         }
-        "6" { Destroy-All; Show-Menu }
+        "6" { Connect-ToInstance; Show-Menu }
+        "7" { Open-WebPage; Show-Menu }
+        "8" { Show-Status; Show-Menu }
+        "9" { Destroy-All; Show-Menu }
         "0" { return }
         default { Write-Err "Choix invalide"; Show-Menu }
     }
@@ -499,6 +646,15 @@ elseif ($GitHub) {
 }
 elseif ($Check) {
     Check-Prerequisites
+}
+elseif ($Connect) {
+    Connect-ToInstance
+}
+elseif ($Web) {
+    Open-WebPage
+}
+elseif ($Status) {
+    Show-Status
 }
 else {
     Show-Menu

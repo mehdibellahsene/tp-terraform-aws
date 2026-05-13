@@ -53,3 +53,25 @@ variable "ssh_public_key_path" {
   type        = string
   default     = "~/.ssh/tp_terraform.pub"
 }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Variables Bonus
+# ══════════════════════════════════════════════════════════════════════════════
+
+variable "create_backend_resources" {
+  description = "Créer les ressources pour le backend S3 (bucket + DynamoDB)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_user_data" {
+  description = "Activer le script user_data pour bootstrap EC2"
+  type        = bool
+  default     = true
+}
+
+variable "use_network_module" {
+  description = "Utiliser le module réseau au lieu des ressources directes"
+  type        = bool
+  default     = false
+}
